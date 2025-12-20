@@ -9,8 +9,8 @@
 
 namespace termviz
 {
-    int max_height = INT_MIN;
-    std::mutex screen_lock;
+    inline int max_height = INT_MIN;
+    inline std::mutex screen_lock;
 
     inline void hide_cursor()
     {
@@ -75,7 +75,7 @@ namespace termviz
         {
             static std::random_device rd;
             static std::mt19937 gen(rd());
-            std::uniform_int_distribution<uint8_t> dist(RED, ORANGE);
+            static std::uniform_int_distribution<uint8_t> dist(RED, ORANGE);
             return dist(gen);
         }
     }

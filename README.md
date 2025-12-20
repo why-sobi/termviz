@@ -1,7 +1,3 @@
-Here’s an updated README version including the “one window per use case” advice:
-
----
-
 # TermViz
 
 **TermViz** is a lightweight terminal visualization library in C++ for building text-based interfaces, charts, bars, and animations. It provides a `Window` class for creating bounded terminal areas and a `Visualizer` namespace for complex drawing operations. Supports both naive and buffered printing modes.
