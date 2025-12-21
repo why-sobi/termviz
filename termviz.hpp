@@ -2,10 +2,21 @@
 
 #include <iostream>
 #include <string>
+#include <sstream>
 #include <string_view>
 #include <random>
 #include <vector>
+#include <thread>
 #include <mutex>
+
+using namespace std::chrono;
+
+std::chrono::milliseconds operator ""_FPS(unsigned long long fps) {
+        if (fps == 0)   throw std::invalid_argument("\nERROR: FPS must be a positive integer (0, 60]");
+        if (fps > 60)   throw std::invalid_argument("\nERROR: FPS are capped at 60 FPS");
+        
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(1.0 / fps));
+}
 
 namespace termviz
 {
@@ -24,18 +35,16 @@ namespace termviz
 
     inline void clear_screen()
     {
-        screen_lock.lock();
+        std::lock_guard<std::mutex> lock(screen_lock);
         hide_cursor();
-        std::cout << "\033[2J\033[H" << std::flush;
-        screen_lock.unlock();
+        std::cout << "\033[2J\033[H" << std::flush;        
     }
 
     inline void reset_cursor()
     {
-        screen_lock.lock();
+        std::lock_guard<std::mutex> lock(screen_lock);
         show_cursor();
         std::cout << "\033[" << max_height << ";1H" << std::flush;
-        screen_lock.unlock();
     }
 
     namespace COLOR
@@ -103,10 +112,10 @@ namespace termviz
         int x, y;
         int width, height;
         int r, c;
-        bool buffered_mode = true; // true = use dirty-bit, false = naive printing
 
         std::vector<std::vector<bool>> dirty; // to track modified cells for optimized rendering
         std::vector<std::vector<Cell>> content;
+
 
         // ----------------- CORE PRIMITIVES -----------------
         void move_string_to_cell(int row_index, const std::string &msg, int start_col, uint8_t color)
@@ -117,9 +126,15 @@ namespace termviz
             for (size_t i = 0; i < msg_length && (start_col + i) < total_columns; i++)
             {
                 content[row_index][start_col + i] = Cell(msg[i], color);
-                if (buffered_mode)
-                    dirty[row_index][start_col + i] = true;
+                dirty[row_index][start_col + i] = true;
             }
+        }
+
+        std::string_view trim_string(const std::string &msg, size_t max_length) {
+            if (msg.length() <= max_length)
+                return msg;
+            else
+                return std::string_view(msg.c_str(), max_length);
         }
 
         void move_cursor(int cx, int cy) const
@@ -138,7 +153,7 @@ namespace termviz
 
         void draw_border(const std::string &heading = "") const
         {
-            screen_lock.lock();
+            std::lock_guard<std::mutex> lock(screen_lock);
             move_cursor(x, y);
 
             if (heading != "")
@@ -162,61 +177,22 @@ namespace termviz
             move_cursor(x, y + height - 1);
             std::cout << "+" << std::string(width - 2, '-') << "+";
             std::cout << std::flush;
-            screen_lock.unlock();
+            
         }
 
-        // ----------------- PRIVATE NAIVE/BLOCK FUNCTIONS -----------------
-        void print_msg_naive(const std::string &msg, uint8_t color)
-        {
-            move_string_to_cell(r, msg, 0, color);
-            screen_lock.lock();
-            move_cursor(x + c, y + r + 1);
-            std::cout << COLOR::ANSI(color) << msg << COLOR::ANSI(COLOR::RESET) << std::flush;
-            screen_lock.unlock();
 
-            (++r) %= content.size();
-            c = 1;
+        void start_render_clock(const std::chrono::milliseconds& fps) {
+            std::thread([this, fps]() {
+                while (true) {
+                    std::this_thread::sleep_for(fps);
+                    this->render();
+                }
+            }).detach();
         }
 
-        void print_msg_buffered(const std::string &msg, uint8_t color)
-        {
-            move_string_to_cell(r, msg, 0, color);
-            (++r) %= content.size();
-            c = 1;
-        }
-
-        void print_msgln_naive(const std::string &msg, uint8_t color)
-        {
-            int append_chars = (width - 2) - msg.length();
-            std::string full_msg = msg + std::string(append_chars > 0 ? append_chars : 0, ' ');
-            print_msg_naive(full_msg, color);
-        }
-
-        void print_msgln_buffered(const std::string &msg, uint8_t color)
-        {
-            int append_chars = (width - 2) - msg.length();
-            std::string full_msg = msg + std::string(append_chars > 0 ? append_chars : 0, ' ');
-            print_msg_buffered(full_msg, color);
-        }
-
-        void print_naive(int row, int col, const std::string &msg, uint8_t color)
-        {
-            move_string_to_cell(row, msg, col, color);
-            screen_lock.lock();
-            move_cursor(x + 1 + col, y + 1 + row);
-            std::cout << COLOR::ANSI(color) << msg << COLOR::ANSI(COLOR::RESET) << std::flush;
-            screen_lock.unlock();
-        }
-
-        void print_buffered(int row, int col, const std::string &msg, uint8_t color)
-        {
-            move_string_to_cell(row, msg, col, color);
-        }
-
-    public:
-        Window(int x, int y, int w, int h, std::string title = "", bool buffered = true)
-            : x(x), y(y), width(w), height(h), r(0), c(1), buffered_mode(buffered)
-        {
+        public:
+        Window(int x, int y, int w, int h, std::string title = "", const std::chrono::milliseconds& fps = 15_FPS)
+            : x(x), y(y), width(w), height(h), r(0), c(1) {
             std::cout << COLOR::ANSI(COLOR::RESET);
             max_height = (std::max)(max_height, y + h);
             draw_border(title);
@@ -228,39 +204,39 @@ namespace termviz
                 content[i].resize(w - 2, Cell(' ', COLOR::RESET));
                 dirty[i].resize(w - 2, false);
             }
+            // start_render_clock(fps);
         }
 
+        ~Window() {
+            std::cout << COLOR::ANSI(COLOR::RESET);
+        }
         void clear_inside()
         {
-            screen_lock.lock();
+            std::lock_guard<std::mutex> lock(screen_lock);
+            std::string row_content(width - 2, ' ');
+
             for (int i = 1; i < height - 1; i++)
             {
                 move_cursor(x + 1, y + i);
-                std::string row_content(width - 2, ' ');
                 move_string_to_cell(i - 1, row_content, 0, COLOR::RESET);
-                if (!buffered_mode)
-                    std::cout << row_content;
+                std::cout << row_content;
             }
-            if (!buffered_mode)
-                std::cout << std::flush;
-            screen_lock.unlock();
+            std::cout << std::flush;            
         }
 
         // ----------------- PUBLIC PRINT FUNCTIONS -----------------
         void print_msg(const std::string &msg, uint8_t color = COLOR::RESET)
         {
-            if (buffered_mode)
-                print_msg_buffered(msg, color);
-            else
-                print_msg_naive(msg, color);
+            move_string_to_cell(r, msg, 0, color);
+            (++r) %= content.size();
+            c = 1;
         }
 
         void print_msgln(const std::string &msg, uint8_t color = COLOR::RESET)
         {
-            if (buffered_mode)
-                print_msgln_buffered(msg, color);
-            else
-                print_msgln_naive(msg, color);
+            int append_chars = (width - 2) - msg.length();
+            std::string full_msg = msg + std::string(append_chars > 0 ? append_chars : 0, ' ');
+            print_msg(full_msg, color);
         }
 
         void print_line(char ch = '-', uint8_t color = COLOR::RESET)
@@ -271,20 +247,18 @@ namespace termviz
 
         void print(int row, int col, const std::string &msg, uint8_t color = COLOR::RESET)
         {
-            if (buffered_mode)
-                print_buffered(row, col, msg, color);
-            else
-                print_naive(row, col, msg, color);
+            move_string_to_cell(row, msg, col, color);
         }
 
         void render()
         {
-            if (!buffered_mode)
-                return; // naive mode prints immediately
+            std::lock_guard<std::mutex> lock(screen_lock);
+            size_t total_rows = content.size();
+            size_t total_cols = content[0].size();
 
-            screen_lock.lock();
-            int total_rows = content.size();
-            int total_cols = content[0].size();
+    
+            std::stringstream ss;
+            uint8_t curr_color;
 
             for (size_t i = 0; i < total_rows; i++)
             {
@@ -296,17 +270,32 @@ namespace termviz
                     if (j == total_cols)
                         break;
                     move_cursor(x + 1 + j, y + 1 + i);
-                    while (j < total_cols && dirty[i][j])
-                    {
-                        std::cout << content[i][j];
-                        dirty[i][j] = false;
+                    
+                    curr_color = content[i][j].color;
+                    ss << COLOR::ANSI(curr_color) << content[i][j].ch;
+                    dirty[i][j] = false;
+                    j++;
+
+                    while (j < total_cols) { 
+                        if (curr_color == content[i][j].color) {
+                            ss << content[i][j].ch;
+                            dirty[i][j] = false;
+                        } else {
+                            ss << COLOR::ANSI(content[i][j].color) << content[i][j].ch;
+                            curr_color = content[i][j].color;
+                            dirty[i][j] = false;
+                        }
                         j++;
                     }
+                    // Output the accumulated string with color changes
+                    std::cout << ss.str();
+                    ss.str("");
+                    ss.clear();
                 }
             }
 
             std::cout << std::flush;
-            screen_lock.unlock();
+            
         }
 
         int get_h() const { return height - 2; }
@@ -315,8 +304,6 @@ namespace termviz
         int get_y() const { return y; }
         int get_rows() const { return content.size(); }
         int get_cols() const { return content[0].size(); }
-
-        void set_buffer_mode(bool buffered) { buffered_mode = buffered; }
     };
 
     namespace Visualizer
