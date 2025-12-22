@@ -23,28 +23,28 @@ namespace termviz
     inline int max_height = INT_MIN;
     inline std::mutex screen_lock;
 
-    inline void hide_cursor()
+    void hide_cursor()
     {
         std::cout << "\033[?25l";
     }
 
-    inline void show_cursor()
+    void show_cursor()
     {
         std::cout << "\033[?25h";
     }
 
+    void reset_cursor()
+    {
+        std::lock_guard<std::mutex> lock(screen_lock);
+        show_cursor();
+        std::cout << "\033[" << max_height << ";1H" << std::flush;
+    }
+    
     inline void clear_screen()
     {
         std::lock_guard<std::mutex> lock(screen_lock);
         hide_cursor();
         std::cout << "\033[2J\033[H" << std::flush;        
-    }
-
-    inline void reset_cursor()
-    {
-        std::lock_guard<std::mutex> lock(screen_lock);
-        show_cursor();
-        std::cout << "\033[" << max_height << ";1H" << std::flush;
     }
 
     namespace COLOR
@@ -180,18 +180,8 @@ namespace termviz
             
         }
 
-
-        void start_render_clock(const std::chrono::milliseconds& fps) {
-            std::thread([this, fps]() {
-                while (true) {
-                    std::this_thread::sleep_for(fps);
-                    this->render();
-                }
-            }).detach();
-        }
-
         public:
-        Window(int x, int y, int w, int h, std::string title = "", const std::chrono::milliseconds& fps = 15_FPS)
+        Window(int x, int y, int w, int h, std::string title = "")
             : x(x), y(y), width(w), height(h), r(0), c(1) {
             std::cout << COLOR::ANSI(COLOR::RESET);
             max_height = (std::max)(max_height, y + h);
@@ -204,7 +194,6 @@ namespace termviz
                 content[i].resize(w - 2, Cell(' ', COLOR::RESET));
                 dirty[i].resize(w - 2, false);
             }
-            // start_render_clock(fps);
         }
 
         ~Window() {
@@ -225,18 +214,27 @@ namespace termviz
         }
 
         // ----------------- PUBLIC PRINT FUNCTIONS -----------------
-        void print_msg(const std::string &msg, uint8_t color = COLOR::RESET)
+        void print_msg(const std::string_view &msg, uint8_t color = COLOR::RESET)
         {
-            move_string_to_cell(r, msg, 0, color);
+            if (msg.length() > static_cast<size_t>(width - 2))
+                throw std::out_of_range("\nERROR: Message length exceeds window width in print_msg");
+            move_string_to_cell(r, msg.data(), 0, color);
             (++r) %= content.size();
             c = 1;
         }
 
         void print_msgln(const std::string &msg, uint8_t color = COLOR::RESET)
         {
-            int append_chars = (width - 2) - msg.length();
-            std::string full_msg = msg + std::string(append_chars > 0 ? append_chars : 0, ' ');
-            print_msg(full_msg, color);
+            if (msg.length() > static_cast<size_t>(width - 2))
+            {
+                print_msg(trim_string(msg, width - 2), color);
+            }
+            else
+            {
+                int append_chars = (width - 2) - msg.length();
+                std::string full_msg = msg + std::string(append_chars > 0 ? append_chars : 0, ' ');
+                print_msg(full_msg, color);
+            }
         }
 
         void print_line(char ch = '-', uint8_t color = COLOR::RESET)
@@ -308,7 +306,18 @@ namespace termviz
 
     namespace Visualizer
     {
-        namespace Static
+        namespace Primitive
+        {
+            void draw_rectangle(Window &win, int row, int col, int width, int height, uint8_t color = COLOR::RESET, char ch = char(219))
+            {
+                if (col < 0 || col + width > win.get_w() || row < 0 || row + height > win.get_h())
+                    throw std::out_of_range("\nERROR: Rectangle dimensions exceed window bounds in draw_rectangle");
+
+                for (int r = row; r < row + height; r++)
+                    win.print(r, col, std::string(width, ch), color);
+            }
+        }
+        namespace Plots
         {
             // functions meant for static display, like album covers, titles, etc.
             void wrap_around(Window &win, const std::string &msg, uint8_t color = COLOR::RESET)
@@ -336,19 +345,6 @@ namespace termviz
                 win.render();
             }
 
-            void draw_rectangle(Window &win, int row, int col, int width, int height, uint8_t color = COLOR::RESET, char ch = char(219))
-            {
-                if (col < 0 || col + width > win.get_w() || row < 0 || row + height > win.get_h())
-                    throw std::out_of_range("\nERROR: Rectangle dimensions exceed window bounds in draw_rectangle");
-
-                for (int r = row; r < row + height; r++)
-                    win.print(r, col, std::string(width, ch), color);
-            }
-        }
-
-        namespace Dynamic
-        {
-            // functions meant for dynamic updates, like bars, graphs, animations
             int getMaxBars(Window &win, int bar_width) { return (win.get_w()) / bar_width; }
 
             void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<uint8_t> &colors = {}, char ch = char(219))
@@ -378,5 +374,6 @@ namespace termviz
                 win.render();
             }
         }
+        
     }
 }

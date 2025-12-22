@@ -1,49 +1,39 @@
 #include "termviz.hpp"
 #include <thread>
-#include <chrono>
-#include <vector>
 
-using namespace termviz;
+int main() {
+    using namespace termviz;
 
-int main()
-{
     clear_screen();
 
-    // ----------------- Hybrid window demo -----------------
-    Window hybrid_win(2, 1, 59, 15, "Hybrid Demo"); // start in buffered mode
+    // One window per use case
+    Window logWin(0, 0, 50, 8, "Logs");
+    Window visWin(0, 9, 50, 10, "Visualizer");
 
-    // Static content first (buffered)
-    Visualizer::Static::wrap_around(hybrid_win,
-        "This window demonstrates switching between buffered and naive modes."
-        "Buffered mode accumulates content and renders efficiently."
-        "Naive mode prints immediately.",
-        COLOR::GREEN);
+    // Write log messages
+    logWin.print_msgln("Starting application...");
+    logWin.print_msgln("Loading resources...");
+    logWin.render(); // explicit flush
 
-    Visualizer::Static::draw_rectangle(hybrid_win, 8, 5, 15, 3, COLOR::BLUE);
-    hybrid_win.render();
+    // Draw a rectangle (primitive)
+    Visualizer::Primitive::draw_rectangle(visWin, 1, 1, 20, 4, COLOR::GREEN);
 
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Draw bars (higher-level helper)
+    Visualizer::Plots::draw_bars(visWin, {3, 5, 2, 6, 4}, 2);
 
-    // ----------------- Dynamic bars (buffered) -----------------
-    int max_bars = Visualizer::Dynamic::getMaxBars(hybrid_win, 3);
-    std::vector<int> heights(max_bars, 0);
-    std::vector<uint8_t> colors(max_bars, COLOR::YELLOW);
+    /*
+        The rectangle will not be drawn as it is immediately overwritten by the bars.
+        if you want rectangle to appear you must call visWin.render() right after drawing the rectangle.
+    */
 
-    for (int t = 0; t < 30; t++)
-    {
-        for (int i = 0; i < max_bars; i++)
-        {
-            heights[i] = 1 + (rand() % hybrid_win.get_h());
-            colors[i] = COLOR::random_color();
-        }
-        Visualizer::Dynamic::draw_bars(hybrid_win, heights, 3, colors);
-        std::this_thread::sleep_for(15_FPS);
+    // Example frame-based update loop
+    while (true) {
+        Visualizer::Plots::draw_bars(visWin, {4, 2, 6, 3, 5}, 2);
+        visWin.render();
+        std::this_thread::sleep_for(30_FPS);
     }
 
-
-    // ----------------- Final pause -----------------
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
     reset_cursor();
+
     return 0;
 }
