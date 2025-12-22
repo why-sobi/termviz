@@ -308,7 +308,7 @@ namespace termviz
     {
         namespace Primitive
         {
-            void draw_rectangle(Window &win, int row, int col, int width, int height, uint8_t color = COLOR::RESET, char ch = char(219))
+            void draw_rectangle(Window &win, int row, int col, int width, int height, uint8_t color = COLOR::RESET, char ch = '#')
             {
                 if (col < 0 || col + width > win.get_w() || row < 0 || row + height > win.get_h())
                     throw std::out_of_range("\nERROR: Rectangle dimensions exceed window bounds in draw_rectangle");
@@ -347,7 +347,7 @@ namespace termviz
 
             int getMaxBars(Window &win, int bar_width) { return (win.get_w()) / bar_width; }
 
-            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<uint8_t> &colors = {}, char ch = char(219))
+            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<uint8_t> &colors = {}, char ch = '#')
             {
                 win.clear_inside();
 
