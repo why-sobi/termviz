@@ -23,30 +23,6 @@ namespace termviz
     inline int max_height = INT_MIN;
     inline std::mutex screen_lock;
 
-    void hide_cursor()
-    {
-        std::cout << "\033[?25l";
-    }
-
-    void show_cursor()
-    {
-        std::cout << "\033[?25h";
-    }
-
-    void reset_cursor()
-    {
-        std::lock_guard<std::mutex> lock(screen_lock);
-        show_cursor();
-        std::cout << "\033[" << max_height << ";1H" << std::flush;
-    }
-    
-    inline void clear_screen()
-    {
-        std::lock_guard<std::mutex> lock(screen_lock);
-        hide_cursor();
-        std::cout << "\033[2J\033[H" << std::flush;        
-    }
-
     namespace COLOR
     {
         constexpr uint8_t RED = 0;
@@ -87,6 +63,30 @@ namespace termviz
             static std::uniform_int_distribution<uint8_t> dist(RED, ORANGE);
             return dist(gen);
         }
+    }
+
+    void hide_cursor()
+    {
+        std::cout << "\033[?25l";
+    }
+
+    void show_cursor()
+    {
+        std::cout << "\033[?25h";
+    }
+
+    void reset_cursor()
+    {
+        std::lock_guard<std::mutex> lock(screen_lock);
+        show_cursor();
+        std::cout << "\033[" << max_height << ";1H" << COLOR::ANSI(COLOR::RESET) << std::flush;
+    }
+    
+    inline void clear_screen()
+    {
+        std::lock_guard<std::mutex> lock(screen_lock);
+        hide_cursor();
+        std::cout << "\033[2J\033[H" << std::flush;        
     }
 
     struct Cell
