@@ -23,47 +23,61 @@ namespace termviz
     inline int max_height = INT_MIN;
     inline std::mutex screen_lock;
 
-    namespace COLOR
-    {
-        constexpr uint8_t RED = 0;
-        constexpr uint8_t GREEN = 1;
-        constexpr uint8_t YELLOW = 2;
-        constexpr uint8_t BLUE = 3;
-        constexpr uint8_t MAGENTA = 4;
-        constexpr uint8_t ORANGE = 5;
-        constexpr uint8_t RESET = 6;
+    struct COLOR {
+        static constexpr uint8_t RED = 0;
+        static constexpr uint8_t GREEN = 1;
+        static constexpr uint8_t YELLOW = 2;
+        static constexpr uint8_t BLUE = 3;
+        static constexpr uint8_t MAGENTA = 4;
+        static constexpr uint8_t ORANGE = 5;
+        static constexpr uint8_t RESET = 6;
+    private:
+        void idToRGB(uint8_t colorID) {
+            switch (colorID) {
+                case RED: { r = 205; g = b = 0; break; }
+                case GREEN: { g = 205; r = b = 0; break; }
+                case YELLOW: { r = g = 205; b = 0; break; }
+                case BLUE: { b = 205; r = g = 0; break; }
+                case MAGENTA: { r = b = 205; g = 0; break; }
+                case ORANGE: { r = 205; g = 135; b = 0; break; }
+                case RESET: { r = g = b = 229; break; }
+                default: throw std::invalid_argument("COLOR ID IS INVALID!\n");
+            }
+        }
+    public:
+        uint8_t r, g, b;
 
-        std::string_view ANSI(uint8_t color)
-        {
-            switch (color)
-            {
-            case 0:
-                return "\033[31m"; // RED
-            case 1:
-                return "\033[32m"; // GREEN
-            case 2:
-                return "\033[33m"; // YELLOW
-            case 3:
-                return "\033[34m"; // BLUE
-            case 4:
-                return "\033[35m"; // MAGENTA
-            case 5:
-                return "\033[38;5;208m"; // ORANGE
-            case 6:
-                return "\033[37m"; // RESET
-            default:
-                return "\033[37m"; // Default RESET
+        COLOR(uint8_t colorID = COLOR::RESET) { idToRGB(colorID); }
+        COLOR(uint8_t red, uint8_t green, uint8_t blue): r(red), g(green), b(blue) {}
+
+        std::string asANSI() const {
+            return "\033[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "m";
+        }
+
+        static std::string_view asANSI(uint8_t colorID) {
+            switch (colorID) {
+            case RED: return "\033[31m"; // RED
+            case GREEN: return "\033[32m"; // GREEN
+            case YELLOW: return "\033[33m"; // YELLOW
+            case BLUE: return "\033[34m"; // BLUE
+            case MAGENTA: return "\033[35m"; // MAGENTA
+            case ORANGE: return "\033[38;5;208m"; // ORANGE
+            case RESET: return "\033[37m"; // RESET
+            default: throw std::invalid_argument("COLOR ID IS INVALID!\n");
             }
         }
 
-        const uint8_t random_color()
-        {
+        static COLOR random_color() {
             static std::random_device rd;
             static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<uint8_t> dist(RED, ORANGE);
-            return dist(gen);
+            static std::uniform_int_distribution<uint8_t> dist(0, 255);
+
+            return COLOR(dist(gen), dist(gen), dist(gen));
         }
-    }
+
+        bool operator == (const COLOR& other) const { return r == other.r && g == other.g && b == other.b; }
+        bool operator != (const COLOR& other) const { return r != other.r || g != other.g || b != other.b; }
+    };
 
     void hide_cursor()
     {
@@ -79,7 +93,7 @@ namespace termviz
     {
         std::lock_guard<std::mutex> lock(screen_lock);
         show_cursor();
-        std::cout << "\033[" << max_height << ";1H" << COLOR::ANSI(COLOR::RESET) << std::flush;
+        std::cout << "\033[" << max_height << ";1H" << COLOR::asANSI(COLOR::RESET) << std::flush;
     }
     
     inline void clear_screen()
@@ -92,16 +106,16 @@ namespace termviz
     struct Cell
     { // so that each cell can have its own character and color
         char ch;
-        uint8_t color;
+        COLOR color;
 
-        Cell(char ch = ' ', uint8_t color = COLOR::RESET) : ch(ch), color(color) {}
+        Cell(char ch = ' ', const COLOR& color = COLOR(COLOR::RESET)) : ch(ch), color(color) {}
 
         bool operator==(const Cell &other) const { return ch == other.ch && color == other.color; }
         bool operator!=(const Cell &other) const { return ch != other.ch || color != other.color; }
 
         friend std::ostream &operator<<(std::ostream &out, const Cell &cell)
         {
-            out << COLOR::ANSI(cell.color) << cell.ch;
+            out << cell.color.asANSI() << cell.ch;
             return out;
         }
     };
@@ -118,7 +132,7 @@ namespace termviz
 
 
         // ----------------- CORE PRIMITIVES -----------------
-        void move_string_to_cell(int row_index, const std::string &msg, int start_col, uint8_t color)
+        void move_string_to_cell(int row_index, const std::string &msg, int start_col, const COLOR& color)
         {
             size_t msg_length = msg.length();
             size_t total_columns = content[row_index].size();
@@ -183,7 +197,7 @@ namespace termviz
         public:
         Window(int x, int y, int w, int h, std::string title = "")
             : x(x), y(y), width(w), height(h), r(0), c(1) {
-            std::cout << COLOR::ANSI(COLOR::RESET);
+            std::cout << COLOR::asANSI(COLOR::RESET);
             max_height = (std::max)(max_height, y + h);
             draw_border(title);
 
@@ -197,7 +211,7 @@ namespace termviz
         }
 
         ~Window() {
-            std::cout << COLOR::ANSI(COLOR::RESET);
+            std::cout << COLOR::asANSI(COLOR::RESET);
         }
         void clear_inside()
         {
@@ -222,7 +236,7 @@ namespace termviz
         }
 
         // ----------------- PUBLIC PRINT FUNCTIONS -----------------
-        void print_msg(const std::string_view &msg, uint8_t color = COLOR::RESET)
+        void print_msg(const std::string_view &msg, const COLOR& color = COLOR(COLOR::RESET))
         {
             if (msg.length() > static_cast<size_t>(width - 2))
                 throw std::out_of_range("\nERROR: Message length exceeds window width in print_msg");
@@ -231,7 +245,7 @@ namespace termviz
             c = 1;
         }
 
-        void print_msgln(const std::string &msg, uint8_t color = COLOR::RESET)
+        void print_msgln(const std::string &msg, const COLOR& color = COLOR(COLOR::RESET))
         {
             if (msg.length() > static_cast<size_t>(width - 2))
             {
@@ -245,13 +259,13 @@ namespace termviz
             }
         }
 
-        void print_line(char ch = '-', uint8_t color = COLOR::RESET)
+        void print_line(char ch = '-', const COLOR& color = COLOR(COLOR::RESET))
         {
             std::string line(width - 2, ch);
             print_msg(line, color);
         }
 
-        void print(int row, int col, const std::string &msg, uint8_t color = COLOR::RESET)
+        void print(int row, int col, const std::string &msg, const COLOR& color = COLOR(COLOR::RESET))
         {
             move_string_to_cell(row, msg, col, color);
         }
@@ -267,7 +281,7 @@ namespace termviz
 
     
             std::stringstream ss;
-            uint8_t curr_color;
+            COLOR curr_color(COLOR::RESET); // temp setting
 
             for (size_t i = 0; i < total_rows; i++)
             {
@@ -281,7 +295,7 @@ namespace termviz
                     move_cursor(x + 1 + j, y + 1 + i);
                     
                     curr_color = content[i][j].color;
-                    ss << COLOR::ANSI(curr_color) << content[i][j].ch;
+                    ss << curr_color.asANSI() << content[i][j].ch;
                     dirty[i][j] = false;
                     j++;
 
@@ -290,7 +304,7 @@ namespace termviz
                             ss << content[i][j].ch;
                             dirty[i][j] = false;
                         } else {
-                            ss << COLOR::ANSI(content[i][j].color) << content[i][j].ch;
+                            ss << content[i][j].color.asANSI() << content[i][j].ch;
                             curr_color = content[i][j].color;
                             dirty[i][j] = false;
                         }
@@ -319,7 +333,7 @@ namespace termviz
     {
         namespace Primitive
         {
-            void draw_rectangle(Window &win, int row, int col, int width, int height, uint8_t color = COLOR::RESET, char ch = '#')
+            void draw_rectangle(Window &win, int row, int col, int width, int height, const COLOR& color = COLOR(COLOR::RESET), char ch = '#')
             {
                 if (col < 0 || col + width > win.get_w() || row < 0 || row + height > win.get_h())
                     throw std::out_of_range("\nERROR: Rectangle dimensions exceed window bounds in draw_rectangle");
@@ -331,7 +345,7 @@ namespace termviz
         namespace Plots
         {
             // functions meant for static display, like album covers, titles, etc.
-            void wrap_around(Window &win, const std::string &msg, uint8_t color = COLOR::RESET)
+            void wrap_around(Window &win, const std::string &msg, const COLOR& color = COLOR(COLOR::RESET))
             {
                 win.clean_buffer();
 
@@ -358,7 +372,7 @@ namespace termviz
 
             int getMaxBars(Window &win, int bar_width) { return (win.get_w()) / bar_width; }
 
-            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<uint8_t> &colors = {}, char ch = '#')
+            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<COLOR> &colors = {}, char ch = '#')
             {
                 if (heights.empty())
                     throw std::invalid_argument("\nERROR: Heights vector is empty in draw_bars");
@@ -377,14 +391,14 @@ namespace termviz
                 for (int i = 0; i < cols; i++)
                 {
                     int bar_height = heights[i];
-                    uint8_t color = colors.empty() ? COLOR::RESET : colors[i];
+                    const COLOR& color = colors.empty() ? COLOR(COLOR::RESET) : colors[i];
 
                     for (int r = total_rows - bar_height; r < total_rows; r++)
                         win.print(r, i * bar_width, std::string(bar_width, ch), color);
                 }
             }
             
-            void draw_frame(Window &win, const std::vector<char> &chars, const std::vector<uint8_t>& colors = {}) {
+            void draw_frame(Window &win, const std::vector<char> &chars, const std::vector<COLOR>& colors = {}) {
                 if (chars.size() != colors.size()) throw std::invalid_argument("Size of characters do not match size of colors vector!\n");
                 if (chars.size() >= win.get_w() * win.get_h()) throw std::out_of_range("Total characters are more than window size!\n");
 

@@ -13,9 +13,9 @@ int main()
     Window hybrid_win(2, 1, 92, 15, "Hybrid Demo"); 
     int max_bars = Visualizer::Plots::getMaxBars(hybrid_win, 3);
     std::vector<int> heights(max_bars, 0);
-    std::vector<uint8_t> colors(max_bars);
+    std::vector<COLOR> colors(max_bars, COLOR(COLOR::BLUE));
 
-    std::generate(colors.begin(), colors.end(), []() {return COLOR::random_color(); });
+    // std::generate(colors.begin(), colors.end(), []() {return COLOR::random_color(); });
 
     for (int t = 0; t < 60; t++)
     {
