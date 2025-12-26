@@ -400,7 +400,7 @@ namespace termviz
             
             void draw_frame(Window &win, const std::vector<char> &chars, const std::vector<COLOR>& colors = {}) {
                 if (chars.size() != colors.size()) throw std::invalid_argument("Size of characters do not match size of colors vector!\n");
-                if (chars.size() >= win.get_w() * win.get_h()) throw std::out_of_range("Total characters are more than window size!\n");
+                if (chars.size() != win.get_w() * win.get_h()) throw std::out_of_range("Total characters do not match window size!\n");
 
                 win.clean_buffer();
 
