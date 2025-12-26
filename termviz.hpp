@@ -207,10 +207,18 @@ namespace termviz
             for (int i = 1; i < height - 1; i++)
             {
                 move_cursor(x + 1, y + i);
-                move_string_to_cell(i - 1, row_content, 0, COLOR::RESET);
                 std::cout << row_content;
             }
             std::cout << std::flush;            
+        }
+
+        void clean_buffer() {
+            std::string row_content(width - 2, ' ');
+
+            for (int i = 1; i < height - 1; i++)
+            {
+                move_string_to_cell(i - 1, row_content, 0, COLOR::RESET);
+            }
         }
 
         // ----------------- PUBLIC PRINT FUNCTIONS -----------------
@@ -250,7 +258,10 @@ namespace termviz
 
         void render()
         {
+            clear_inside();
+
             std::lock_guard<std::mutex> lock(screen_lock);
+
             size_t total_rows = content.size();
             size_t total_cols = content[0].size();
 
@@ -322,7 +333,8 @@ namespace termviz
             // functions meant for static display, like album covers, titles, etc.
             void wrap_around(Window &win, const std::string &msg, uint8_t color = COLOR::RESET)
             {
-                win.clear_inside();
+                win.clean_buffer();
+
                 int total_rows = win.get_rows();
                 int total_cols = win.get_cols();
 
@@ -342,15 +354,12 @@ namespace termviz
                     win.print(r, 0, line, color);
                     start += line.length();
                 }
-                win.render();
             }
 
             int getMaxBars(Window &win, int bar_width) { return (win.get_w()) / bar_width; }
 
             void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<uint8_t> &colors = {}, char ch = '#')
             {
-                win.clear_inside();
-
                 if (heights.empty())
                     throw std::invalid_argument("\nERROR: Heights vector is empty in draw_bars");
                 if (bar_width <= 0)
@@ -359,6 +368,8 @@ namespace termviz
                     throw std::out_of_range("\nnERROR: Bars exceed window width in draw_bars");
                 if (!colors.empty() && colors.size() != heights.size())
                     throw std::invalid_argument("\nnERROR: Colors vector size must match heights vector size in draw_bars");
+
+                win.clean_buffer();
 
                 int total_rows = win.get_rows();
                 int cols = heights.size();
@@ -371,7 +382,22 @@ namespace termviz
                     for (int r = total_rows - bar_height; r < total_rows; r++)
                         win.print(r, i * bar_width, std::string(bar_width, ch), color);
                 }
-                win.render();
+            }
+            
+            void draw_frame(Window &win, const std::vector<char> &chars, const std::vector<uint8_t>& colors = {}) {
+                if (chars.size() != colors.size()) throw std::invalid_argument("Size of characters do not match size of colors vector!\n");
+                if (chars.size() >= win.get_w() * win.get_h()) throw std::out_of_range("Total characters are more than window size!\n");
+
+                win.clean_buffer();
+
+                int total_chars = chars.size();
+                int max_width = win.get_w();
+                for (int i = 0; i < total_chars; i++) {
+                    int x = i % max_width;
+                    int y = i / max_width;
+
+                    win.print(y, x, std::to_string(chars[i]), colors[i]);
+                }
             }
         }
         
