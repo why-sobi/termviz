@@ -410,7 +410,7 @@ namespace termviz
                     int x = i % max_width;
                     int y = i / max_width;
 
-                    win.print(y, x, std::to_string(chars[i]), colors[i]);
+                    win.print(y, x, std::string(1, chars[i]), colors[i]);
                 }
             }
         }
