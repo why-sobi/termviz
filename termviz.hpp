@@ -270,9 +270,9 @@ namespace termviz
             move_string_to_cell(row, msg, col, color);
         }
 
-        void render()
+        void render(bool clear_first=false)
         {
-            clear_inside();
+            if (clear_first) clear_inside(); // use it with visalizer
 
             std::lock_guard<std::mutex> lock(screen_lock);
 
