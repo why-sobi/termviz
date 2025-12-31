@@ -391,7 +391,7 @@ namespace termviz
                 for (int i = 0; i < cols; i++)
                 {
                     int bar_height = heights[i];
-                    const COLOR& color = colors.empty() ? COLOR(COLOR::RESET) : colors[i];
+                    const COLOR& color = colors.empty() ? COLOR(COLOR::BLUE) : colors[i];
 
                     for (int r = total_rows - bar_height; r < total_rows; r++)
                         win.print(r, i * bar_width, std::string(bar_width, ch), color);
