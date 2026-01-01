@@ -8,6 +8,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <climits>
 
 using namespace std::chrono;
 
