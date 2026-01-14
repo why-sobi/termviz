@@ -8,7 +8,9 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <functional>
 #include <climits>
+#include <cassert>
 
 using namespace std::chrono;
 
@@ -413,6 +415,35 @@ namespace termviz
 
                     win.print(y, x, std::string(1, chars[i]), colors[i]);
                 }
+            }
+
+            void draw_progress_bar(
+                Window &win, int row, 
+                int col, int width, 
+                std::function<int()> progress_func, 
+                const COLOR& color = COLOR(COLOR::GREEN),
+                char fill_ch = '#', char empty_ch = '='
+            ) {
+
+                if (col < 0 || col + width > win.get_w() || row < 0 || row >= win.get_h())
+                    throw std::out_of_range("\nERROR: Progress bar dimensions exceed window bounds in draw_progress_bar");
+
+                int progress = progress_func();
+                assert(progress >= 0 && progress <= 100 && "Termviz: Progress out of bounds!");
+
+                win.print(row, col, "[", color);
+                win.print(row, col + width - 1, "]", color);
+
+                width -= 2; // Adjust for brackets
+                col+=1; // Move inside the brackets
+                
+                int filled_length = static_cast<int>(width * (progress / 100.0f));
+                int empty_length = width - filled_length;
+
+                std::string filled_part(filled_length, fill_ch);
+                std::string empty_part(empty_length, empty_ch);
+
+                win.print(row, col, filled_part + empty_part, color);
             }
         }
         
