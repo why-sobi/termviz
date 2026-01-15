@@ -332,6 +332,37 @@ namespace termviz
         int get_cols() const { return content[0].size(); }
     };
 
+    namespace ThreeD {
+            struct Point2D {
+                int x, y;
+                Point2D(int x=0, int y=0) : x(x), y(y) {}
+            };
+
+            struct Point3D {
+                float x, y, z;
+                Point3D(float x=0, float y=0, float z=0) : x(x), y(y), z(z) {}
+
+                Point3D rotate(float angle) const {
+                    float rad = angle * 0.0174533f; // Convert degrees to radians
+                    
+                    // Rotate around Y-axis
+                    float nx = x * cos(rad) - z * sin(rad);
+                    float nz = x * sin(rad) + z * cos(rad);
+                    
+                    // Rotate around X-axis
+                    float ny = y * cos(rad) - nz * sin(rad);
+                    nz = y * sin(rad) + nz * cos(rad);
+                    
+                    return Point3D(nx, ny, nz);
+                }
+
+                // for casting 3D to 2D
+                operator Point2D() const {
+                    return Point2D(x, y);
+                }
+            };
+    }
+
     namespace Visualizer
     {
         namespace Primitive
@@ -446,6 +477,58 @@ namespace termviz
                 win.print(row, col, filled_part + empty_part, color);
             }
         }
-        
+        namespace ThreeD {
+
+            using namespace termviz::ThreeD;
+
+            void draw_point3D(Window &win, const Point3D &point, const COLOR& color = COLOR(COLOR::RESET), char ch = '#') {
+                Point2D p2d = static_cast<Point2D>(point); // simple orthographic projection
+                if (p2d.x < 0 || p2d.x >= win.get_w() || p2d.y < 0 || p2d.y >= win.get_h())
+                    throw std::out_of_range("\nERROR: 3D Point projects outside window bounds in draw_point3D");
+
+                win.print(p2d.y, p2d.x, std::string(1, ch), color);
+            }
+
+            void draw_line3D(Window &win, const Point3D &p1, const Point3D &p2, const COLOR& color = COLOR(COLOR::RESET), char ch = '#') {
+                Point2D s = static_cast<Point2D>(p1);
+                Point2D e = static_cast<Point2D>(p2);
+
+                // Bresenham's line algorithm
+                int dx = abs(e.x - s.x), sx = s.x < e.x ? 1 : -1;
+                int dy = -abs(e.y - s.y), sy = s.y < e.y ? 1 : -1;
+                int err = dx + dy, e2;
+
+                int steps = std::max(dx, abs(dy)); // we check how many steps it takes to draw the line
+                int current_step = 0; // this will help in interpolation
+
+                while (true) {
+                    // Calculate "Darkness" based on Z
+                    // Linear interpolation of Z: current_z = z1 + (t * (z2 - z1))
+                    float t = (steps == 0) ? 1.0f : (float)current_step / steps;
+                    float current_z = p1.z + t * (p2.z - p1.z);
+
+                    // Map Z to a brightness multiplier (e.g., further = darker)
+                    // Adjust these values based on your scene depth
+                    float brightness = 1.0f / (1.0f + (current_z * 0.1f)); 
+                    COLOR depth_color(
+                        static_cast<uint8_t>(color.r * brightness),
+                        static_cast<uint8_t>(color.g * brightness),
+                        static_cast<uint8_t>(color.b * brightness)
+                    );
+
+                    if (s.x >= 0 && s.x < win.get_w() && s.y >= 0 && s.y < win.get_h()) {
+                        win.print(s.y, s.x, std::string(1, ch), depth_color);
+                    }
+
+                    if (s.x == e.x && s.y == e.y) break;
+                    e2 = 2 * err;
+                    if (e2 >= dy) { err += dy; s.x += sx; }
+                    if (e2 <= dx) { err += dx; s.y += sy; }
+                    current_step++;
+                }
+            }
+        }
     }
+
+    
 }

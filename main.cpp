@@ -2,50 +2,48 @@
 #include <thread>
 #include <chrono>
 
-// A simple general-purpose data source
-struct TaskManager {
-    float progress = 0.0f;
-    bool complete = false;
-    void update() { 
-        progress += 0.01f; 
-        if (progress > 1.0f) complete = true; 
-    }
-
-};
+using namespace termviz::ThreeD;
+using namespace termviz::Visualizer;
 
 int main() {
-    using namespace termviz;
-    
-    TaskManager task;
-    clear_screen();
-    
-    // Create a generic status window
-    Window statusWin(5, 5, 30, 3, "Task Progress");
-    Window logWin(5, 10, 50, 10, "Logs");
+    termviz::clear_screen();
+    termviz::hide_cursor();
+    termviz::Window viewWin(5, 2, 80, 35, "3D Spinning Cube");
 
-    while (!task.complete) {
-        // Update the user data
-        task.update();
+    termviz::ThreeD::Point3D v[8] = {
+        {-1,-1,-1}, {1,-1,-1}, {1,1,-1}, {-1,1,-1},
+        {-1,-1, 1}, {1,-1, 1}, {1,1, 1}, {-1,1, 1}
+    };
 
-        logWin.print_msgln("Current Progress: " + std::to_string(static_cast<int>(task.progress * 100)) + "%", COLOR(COLOR::YELLOW));
-        logWin.render();        
+    float angle = 0;
+    while (true) {
+        viewWin.clean_buffer(); // Clear the "ink" from last frame
+        angle += 2.0f;          // Increase rotation
 
-        // DRAW: The library just asks "What is the float right now?"
-        // No void* casting, no storage in the library core.
-        Visualizer::Plots::draw_progress_bar(statusWin, 0, 0, statusWin.get_w(), [&]() {
-            return int(task.progress * 100);
-        });
+        // 1. Rotate, 2. Project, 3. Draw
+        termviz::ThreeD::Point3D proj_v[8];
+        for(int i=0; i<8; i++) {
+            auto rotated = v[i].rotate(angle);
+            
+            // Perspective Projection
+            float f = 30.0f; 
+            float factor = f / (rotated.z + 5.0f);
+            proj_v[i] = termviz::ThreeD::Point3D(
+                (rotated.x * factor * 2.2f) + (viewWin.get_w() / 2.0f),
+                (rotated.y * factor) + (viewWin.get_h() / 2.0f),
+                rotated.z
+            );
+        }
 
-        statusWin.render();
-        
-        // Check if we should exit (user input logic would go here)
-        std::this_thread::sleep_for(15_FPS);
-        
-        // Optional: clear window buffer for next frame if your 
-        // draw_progress_bar doesn't overwrite everything.
-        // statusWin.clear(); 
+        auto draw = [&](int a, int b) {
+            ThreeD::draw_line3D(viewWin, proj_v[a], proj_v[b], termviz::COLOR::GREEN, 'o');
+        };
+
+        for(int i=0; i<4; i++) {
+            draw(i, (i+1)%4); draw(i+4, ((i+1)%4)+4); draw(i, i+4);
+        }
+
+        viewWin.render(); // Only prints what changed!
+        std::this_thread::sleep_for(30_FPS);
     }
-
-    reset_cursor();
-    return 0;
 }
