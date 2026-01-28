@@ -375,6 +375,44 @@ namespace termviz
                 for (int r = row; r < row + height; r++)
                     win.print(r, col, std::string(width, ch), color);
             }
+
+            void draw_line(Window& win, int x0, int y0, int x1, int y1, const COLOR& col, char ch = '#') {
+                // 1. Calculate distances and directions
+                int dx = std::abs(x1 - x0);
+                int dy = -std::abs(y1 - y0); // dy is negative in this algorithm
+                int sx = (x0 < x1) ? 1 : -1;  // Step direction for X
+                int sy = (y0 < y1) ? 1 : -1;  // Step direction for Y
+                
+                // 2. The 'Error' variable tracks the distance to the ideal line
+                int err = dx + dy; 
+                int e2; // Temporary variable for the decision check
+
+                while (true) {
+                    // 3. Buffer-Safe Print
+                    // Check bounds before printing to prevent vector out-of-bounds
+                    if (x0 >= 0 && x0 < win.get_w() && y0 >= 0 && y0 < win.get_h()) {
+                        win.print(y0, x0, std::string(1, ch), col);
+                    }
+
+                    // 4. If we've reached the destination, stop
+                    if (x0 == x1 && y0 == y1) break;
+
+                    // 5. Calculate step
+                    e2 = 2 * err;
+                    
+                    // Horizontal step check
+                    if (e2 >= dy) {
+                        err += dy;
+                        x0 += sx;
+                    }
+                    
+                    // Vertical step check
+                    if (e2 <= dx) {
+                        err += dx;
+                        y0 += sy;
+                    }
+                }
+            }
         }
         namespace Plots
         {
