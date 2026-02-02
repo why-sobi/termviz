@@ -15,7 +15,7 @@
 using namespace std::chrono;
 
 std::chrono::milliseconds operator ""_FPS(unsigned long long fps) {
-        if (fps == 0)   throw std::invalid_argument("\nERROR: FPS must be a positive integer (0, 60]");
+        if (fps <= 0)   throw std::invalid_argument("\nERROR: FPS must be a positive integer (0, 60]");
         if (fps > 60)   throw std::invalid_argument("\nERROR: FPS are capped at 60 FPS");
         
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(1.0 / fps));
