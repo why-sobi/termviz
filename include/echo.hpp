@@ -14,14 +14,14 @@
 
 using namespace std::chrono;
 
-std::chrono::milliseconds operator ""_FPS(unsigned long long fps) {
+inline std::chrono::milliseconds operator ""_FPS(unsigned long long fps) {
         if (fps <= 0)   throw std::invalid_argument("\nERROR: FPS must be a positive integer (0, 60]");
         if (fps > 60)   throw std::invalid_argument("\nERROR: FPS are capped at 60 FPS");
         
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(1.0 / fps));
 }
 
-namespace termviz
+namespace echo
 {
     inline int max_height = INT_MIN;
     inline std::mutex screen_lock;
@@ -37,13 +37,13 @@ namespace termviz
     private:
         void idToRGB(uint8_t colorID) {
             switch (colorID) {
-                case RED: { r = 205; g = b = 0; break; }
-                case GREEN: { g = 205; r = b = 0; break; }
-                case YELLOW: { r = g = 205; b = 0; break; }
-                case BLUE: { b = 205; r = g = 0; break; }
-                case MAGENTA: { r = b = 205; g = 0; break; }
-                case ORANGE: { r = 205; g = 135; b = 0; break; }
-                case RESET: { r = g = b = 229; break; }
+                case RED:       { r = 205; g = b = 0; break; }
+                case GREEN:     { g = 205; r = b = 0; break; }
+                case YELLOW:    { r = g = 205; b = 0; break; }
+                case BLUE:      { b = 205; r = g = 0; break; }
+                case MAGENTA:   { r = b = 205; g = 0; break; }
+                case ORANGE:    { r = 205; g = 135; b = 0; break; }
+                case RESET:     { r = g = b = 229; break; }
                 default: throw std::invalid_argument("COLOR ID IS INVALID!\n");
             }
         }
@@ -82,29 +82,22 @@ namespace termviz
         bool operator != (const COLOR& other) const { return r != other.r || g != other.g || b != other.b; }
     };
 
-    void hide_cursor()
-    {
-        std::cout << "\033[?25l";
-    }
+    // --------------- GLOBAL HELPERS --------------
+    inline void hide_cursor() { std::cout << "\033[?25l"; }
+    inline void show_cursor(){ std::cout << "\033[?25h"; }
 
-    void show_cursor()
-    {
-        std::cout << "\033[?25h";
-    }
-
-    void reset_cursor()
-    {
+    inline void reset_cursor() {
         std::lock_guard<std::mutex> lock(screen_lock);
         show_cursor();
         std::cout << "\033[" << max_height << ";1H" << COLOR::asANSI(COLOR::RESET) << std::flush;
     }
     
-    inline void clear_screen()
-    {
+    inline void clear_screen() {
         std::lock_guard<std::mutex> lock(screen_lock);
         hide_cursor();
         std::cout << "\033[2J\033[H" << std::flush;        
     }
+
 
     struct Cell
     { // so that each cell can have its own character and color
@@ -517,7 +510,7 @@ namespace termviz
         }
         namespace ThreeD {
 
-            using namespace termviz::ThreeD;
+            using namespace echo::ThreeD;
 
             void draw_point3D(Window &win, const Point3D &point, const COLOR& color = COLOR(COLOR::RESET), char ch = '#') {
                 Point2D p2d = static_cast<Point2D>(point); // simple orthographic projection
@@ -567,6 +560,4 @@ namespace termviz
             }
         }
     }
-
-    
 }

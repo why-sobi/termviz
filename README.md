@@ -1,6 +1,6 @@
-# TermViz
+# ECHO
 
-**TermViz** is a lightweight, thread-safe terminal visualization library in C++ designed for building structured text-based UIs and real-time 3D animations. It treats the terminal as a **frame buffer**, utilizing an optimized "dirty-cell" rendering system to minimize flicker and CPU overhead.
+**ECHO** is a lightweight, thread-safe terminal visualization library in C++ designed for building structured text-based UIs and real-time 3D animations. It treats the terminal as a **frame buffer**, utilizing an optimized "dirty-cell" rendering system to minimize flicker and CPU overhead.
 
 ---
 
@@ -27,11 +27,11 @@
 ## Installation
 
 ```bash
-git clone https://github.com/why-sobi/termviz.git
+git clone https://github.com/why-sobi/echo.git
 
 ```
 
-Include `termviz.hpp` in your project. Ensure you are using C++17 or later.
+Include `echo.hpp` in your project. Ensure you are using C++17 or later.
 
 ---
 
@@ -40,10 +40,10 @@ Include `termviz.hpp` in your project. Ensure you are using C++17 or later.
 ### 1. Real-Time 3D Animation
 
 ```cpp
-#include "termviz.hpp"
+#include "echo.hpp"
 
 int main() {
-    using namespace termviz;
+    using namespace echo;
     clear_screen();
     Window view(5, 2, 80, 35, "3D Engine");
 
@@ -77,7 +77,7 @@ ui.render();
 
 ## The 3D Pipeline
 
-TermViz handles 3D in three distinct steps:
+ECHO handles 3D in three distinct steps:
 
 1. **Transformation**: Rotate or move your `Point3D` coordinates.
 2. **Projection**: Convert `Point3D` to screen-space coordinates while preserving  depth.
@@ -87,18 +87,18 @@ TermViz handles 3D in three distinct steps:
 
 ## API Overview
 
-### `termviz::COLOR`
+### `echo::COLOR`
 
 Supports standard constants (`RED`, `GREEN`, etc.) or custom RGB:
 `COLOR myCol(205, 135, 0);`
 
-### `termviz::Window`
+### `echo::Window`
 
 * `print(row, col, msg, color)`: The core primitive.
 * `clean_buffer()`: Clears the "ink" from the window without clearing the terminal screen.
 * `render(bool clear_first)`: Pushes the buffer to the terminal.
 
-### `termviz::Visualizer`
+### `echo::Visualizer`
 
 * **Primitive**: `draw_rectangle`, `draw_line_2d`
 * **Plots**: `draw_bars`, `draw_progress_bar`
@@ -108,6 +108,6 @@ Supports standard constants (`RED`, `GREEN`, etc.) or custom RGB:
 
 ## Design Philosophy
 
-TermViz is built for developers who want "software-rendering" control. It does not use a complex `WindowManager` or event-bubbling system. It provides the grid, the math, and the optimized output—the logic of how windows interact is entirely up to you.
+ECHO is built for developers who want "software-rendering" control. It does not use a complex `WindowManager` or event-bubbling system. It provides the grid, the math, and the optimized output—the logic of how windows interact is entirely up to you.
 
 ---
