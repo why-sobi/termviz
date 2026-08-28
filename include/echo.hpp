@@ -11,12 +11,14 @@
 #include <functional>
 #include <climits>
 #include <cassert>
+#include <cwctype>
 
 #ifdef _WIN32
     #include <windows.h>
 #else
     #include <sys/ioctl.h>
     #include <unistd.h>
+    #include <signal.h>
 #endif
 
 using namespace std::chrono;
@@ -24,7 +26,7 @@ using namespace std::chrono;
 inline std::chrono::milliseconds operator ""_FPS(unsigned long long fps) {
         if (fps <= 0)   throw std::invalid_argument("\nERROR: FPS must be a positive integer (0, 60]");
         if (fps > 60)   throw std::invalid_argument("\nERROR: FPS are capped at 60 FPS");
-        
+
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(1.0 / fps));
 }
 
@@ -68,13 +70,13 @@ namespace echo
 
         static std::string_view asANSI(uint8_t colorID) {
             switch (colorID) {
-            case RED: return "\033[31m"; // RED
-            case GREEN: return "\033[32m"; // GREEN
-            case YELLOW: return "\033[33m"; // YELLOW
-            case BLUE: return "\033[34m"; // BLUE
-            case MAGENTA: return "\033[35m"; // MAGENTA
-            case ORANGE: return "\033[38;5;208m"; // ORANGE
-            case RESET: return "\033[37m"; // RESET
+            case RED: return "\033[31m";
+            case GREEN: return "\033[32m";
+            case YELLOW: return "\033[33m";
+            case BLUE: return "\033[34m";
+            case MAGENTA: return "\033[35m";
+            case ORANGE: return "\033[38;5;208m";
+            case RESET: return "\033[37m";
             default: throw std::invalid_argument("COLOR ID IS INVALID!\n");
             }
         }
@@ -92,6 +94,16 @@ namespace echo
     };
 
     // --------------- GLOBAL HELPERS --------------
+    inline void init_terminal() {
+#ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD mode = 0;
+        GetConsoleMode(hOut, &mode);
+        SetConsoleMode(hOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#endif
+    }
+
     inline void hide_cursor() { std::cout << "\033[?25l"; }
     inline void show_cursor(){ std::cout << "\033[?25h"; }
 
@@ -100,7 +112,7 @@ namespace echo
         show_cursor();
         std::cout << "\033[" << max_height << ";1H" << COLOR::asANSI(COLOR::RESET) << std::flush;
     }
-    
+
     inline void clear_screen() {
         std::lock_guard<std::mutex> lock(screen_lock);
         hide_cursor();
@@ -121,18 +133,19 @@ namespace echo
 
 
     struct Cell
-    { // so that each cell can have its own character and color
-        char ch;
+    { 
+        std::string utf_char; // Full UTF-8 support (handles 1-4 byte characters)
         COLOR color;
 
-        Cell(char ch = ' ', const COLOR& color = COLOR(COLOR::RESET)) : ch(ch), color(color) {}
+        Cell(const std::string &ch = " ", const COLOR& color = COLOR(COLOR::RESET)) : utf_char(ch), color(color) {}
+        Cell(char ch, const COLOR& color = COLOR(COLOR::RESET)) : utf_char(1, ch), color(color) {}
 
-        bool operator==(const Cell &other) const { return ch == other.ch && color == other.color; }
-        bool operator!=(const Cell &other) const { return ch != other.ch || color != other.color; }
+        bool operator==(const Cell &other) const { return utf_char == other.utf_char && color == other.color; }
+        bool operator!=(const Cell &other) const { return utf_char != other.utf_char || color != other.color; }
 
         friend std::ostream &operator<<(std::ostream &out, const Cell &cell)
         {
-            out << cell.color.asANSI() << cell.ch;
+            out << cell.color.asANSI() << cell.utf_char;
             return out;
         }
     };
@@ -144,20 +157,33 @@ namespace echo
         int width, height;
         int r, c;
 
-        std::vector<std::vector<bool>> dirty; // to track modified cells for optimized rendering
+        std::vector<std::vector<bool>> dirty; 
         std::vector<std::vector<Cell>> content;
 
-
-        // ----------------- CORE PRIMITIVES -----------------
         void move_string_to_cell(int row_index, const std::string &msg, int start_col, const COLOR& color)
         {
-            size_t msg_length = msg.length();
             size_t total_columns = content[row_index].size();
+            size_t i = 0;
+            size_t col_offset = 0;
 
-            for (size_t i = 0; i < msg_length && (start_col + i) < total_columns; i++)
+            while (i < msg.length() && (start_col + col_offset) < total_columns)
             {
-                content[row_index][start_col + i] = Cell(msg[i], color);
-                dirty[row_index][start_col + i] = true;
+                size_t char_len = 1;
+                unsigned char c = msg[i];
+                if (c >= 0xFC) char_len = 6;
+                else if (c >= 0xF8) char_len = 5;
+                else if (c >= 0xF0) char_len = 4;
+                else if (c >= 0xE0) char_len = 3;
+                else if (c >= 0xC0) char_len = 2;
+
+                if (i + char_len > msg.length()) char_len = msg.length() - i;
+
+                std::string utf_symbol = msg.substr(i, char_len);
+                content[row_index][start_col + col_offset] = Cell(utf_symbol, color);
+                dirty[row_index][start_col + col_offset] = true;
+
+                i += char_len;
+                col_offset++;
             }
         }
 
@@ -171,15 +197,6 @@ namespace echo
         void move_cursor(int cx, int cy) const
         {
             std::cout << "\033[" << cy << ";" << cx << "H";
-        }
-
-        void clear_line(int px, int py) const
-        {
-            int cx = x + 1 + px;
-            int cy = y + 1 + py;
-            move_cursor(cx, cy);
-            std::cout << std::string(width - 2, ' ');
-            std::cout << std::flush;
         }
 
         void draw_border(const std::string &heading = "") const
@@ -208,12 +225,12 @@ namespace echo
             move_cursor(x, y + height - 1);
             std::cout << "+" << std::string(width - 2, '-') << "+";
             std::cout << std::flush;
-            
         }
 
-        public:
+    public:
         Window(int x, int y, int w, int h, std::string title = "")
             : x(x), y(y), width(w), height(h), r(0), c(1) {
+            init_terminal();
             std::cout << COLOR::asANSI(COLOR::RESET);
             max_height = (std::max)(max_height, y + h);
             draw_border(title);
@@ -222,7 +239,7 @@ namespace echo
             dirty.resize(h - 2);
             for (int i = 0; i < h - 2; i++)
             {
-                content[i].resize(w - 2, Cell(' ', COLOR::RESET));
+                content[i].resize(w - 2, Cell(" ", COLOR::RESET));
                 dirty[i].resize(w - 2, false);
             }
         }
@@ -230,6 +247,20 @@ namespace echo
         ~Window() {
             std::cout << COLOR::asANSI(COLOR::RESET);
         }
+
+        void resize(int new_w, int new_h, const std::string &title = "") {
+            std::lock_guard<std::mutex> lock(screen_lock);
+            width = new_w;
+            height = new_h;
+            max_height = (std::max)(max_height, y + new_h);
+
+            content.assign(height - 2, std::vector<Cell>(width - 2, Cell(" ", COLOR::RESET)));
+            dirty.assign(height - 2, std::vector<bool>(width - 2, true)); // Force complete redraw on resize
+
+            clear_inside();
+            draw_border(title);
+        }
+
         void clear_inside()
         {
             std::lock_guard<std::mutex> lock(screen_lock);
@@ -252,7 +283,6 @@ namespace echo
             }
         }
 
-        // ----------------- PUBLIC PRINT FUNCTIONS -----------------
         void print_msg(const std::string_view &msg, const COLOR& color = COLOR(COLOR::RESET))
         {
             if (msg.length() > static_cast<size_t>(width - 2))
@@ -289,16 +319,15 @@ namespace echo
 
         void render(bool clear_first=false)
         {
-            if (clear_first) clear_inside(); // use it with visalizer
+            if (clear_first) clear_inside();
 
             std::lock_guard<std::mutex> lock(screen_lock);
 
             size_t total_rows = content.size();
             size_t total_cols = content[0].size();
 
-    
             std::stringstream ss;
-            COLOR curr_color(COLOR::RESET); // temp setting
+            COLOR curr_color(COLOR::RESET);
 
             for (size_t i = 0; i < total_rows; i++)
             {
@@ -310,32 +339,29 @@ namespace echo
                     if (j == total_cols)
                         break;
                     move_cursor(x + 1 + j, y + 1 + i);
-                    
+
                     curr_color = content[i][j].color;
-                    ss << curr_color.asANSI() << content[i][j].ch;
+                    ss << curr_color.asANSI() << content[i][j].utf_char;
                     dirty[i][j] = false;
                     j++;
 
                     while (j < total_cols) { 
                         if (curr_color == content[i][j].color) {
-                            ss << content[i][j].ch;
+                            ss << content[i][j].utf_char;
                             dirty[i][j] = false;
                         } else {
-                            ss << content[i][j].color.asANSI() << content[i][j].ch;
+                            ss << content[i][j].color.asANSI() << content[i][j].utf_char;
                             curr_color = content[i][j].color;
                             dirty[i][j] = false;
                         }
                         j++;
                     }
-                    // Output the accumulated string with color changes
                     std::cout << ss.str();
                     ss.str("");
                     ss.clear();
                 }
             }
-
             std::cout << std::flush;
-            
         }
 
         int get_h() const { return height - 2; }
@@ -357,22 +383,19 @@ namespace echo
                 Point3D(float x=0, float y=0, float z=0) : x(x), y(y), z(z) {}
 
                 Point3D rotate(float angle) const {
-                    float rad = angle * 0.0174533f; // Convert degrees to radians
-                    
-                    // Rotate around Y-axis
+                    float rad = angle * 0.0174533f;
+
                     float nx = x * cos(rad) - z * sin(rad);
                     float nz = x * sin(rad) + z * cos(rad);
-                    
-                    // Rotate around X-axis
+
                     float ny = y * cos(rad) - nz * sin(rad);
                     nz = y * sin(rad) + nz * cos(rad);
-                    
+
                     return Point3D(nx, ny, nz);
                 }
 
-                // for casting 3D to 2D
                 operator Point2D() const {
-                    return Point2D(x, y);
+                    return Point2D(static_cast<int>(x), static_cast<int>(y));
                 }
             };
     }
@@ -381,60 +404,45 @@ namespace echo
     {
         namespace Primitive
         {
-            void draw_rectangle(Window &win, int row, int col, int width, int height, const COLOR& color = COLOR(COLOR::RESET), char ch = '#')
+            void draw_rectangle(Window &win, int row, int col, int width, int height, const COLOR& color = COLOR(COLOR::RESET), const std::string &ch = "#")
             {
                 if (col < 0 || col + width > win.get_w() || row < 0 || row + height > win.get_h())
                     throw std::out_of_range("\nERROR: Rectangle dimensions exceed window bounds in draw_rectangle");
 
-                for (int r = row; r < row + height; r++)
-                    win.print(r, col, std::string(width, ch), color);
+                for (int r = row; r < row + height; r++) {
+                    std::string line = "";
+                    for(int w_i = 0; w_i < width; ++w_i) line += ch;
+                    win.print(r, col, line, color);
+                }
             }
 
-            void draw_line(Window& win, int x0, int y0, int x1, int y1, const COLOR& col, char ch = '#') {
-                // 1. Calculate distances and directions
+            void draw_line(Window& win, int x0, int y0, int x1, int y1, const COLOR& col, const std::string &ch = "#") {
                 int dx = std::abs(x1 - x0);
-                int dy = -std::abs(y1 - y0); // dy is negative in this algorithm
-                int sx = (x0 < x1) ? 1 : -1;  // Step direction for X
-                int sy = (y0 < y1) ? 1 : -1;  // Step direction for Y
+                int dy = -std::abs(y1 - y0);
+                int sx = (x0 < x1) ? 1 : -1;
+                int sy = (y0 < y1) ? 1 : -1;
                 
-                // 2. The 'Error' variable tracks the distance to the ideal line
                 int err = dx + dy; 
-                int e2; // Temporary variable for the decision check
+                int e2;
 
                 while (true) {
-                    // 3. Buffer-Safe Print
-                    // Check bounds before printing to prevent vector out-of-bounds
                     if (x0 >= 0 && x0 < win.get_w() && y0 >= 0 && y0 < win.get_h()) {
-                        win.print(y0, x0, std::string(1, ch), col);
+                        win.print(y0, x0, ch, col);
                     }
 
-                    // 4. If we've reached the destination, stop
                     if (x0 == x1 && y0 == y1) break;
 
-                    // 5. Calculate step
                     e2 = 2 * err;
-                    
-                    // Horizontal step check
-                    if (e2 >= dy) {
-                        err += dy;
-                        x0 += sx;
-                    }
-                    
-                    // Vertical step check
-                    if (e2 <= dx) {
-                        err += dx;
-                        y0 += sy;
-                    }
+                    if (e2 >= dy) { err += dy; x0 += sx; }
+                    if (e2 <= dx) { err += dx; y0 += sy; }
                 }
             }
         }
         namespace Plots
         {
-            // functions meant for static display, like album covers, titles, etc.
             void wrap_around(Window &win, const std::string &msg, const COLOR& color = COLOR(COLOR::RESET))
             {
                 win.clean_buffer();
-
                 int total_rows = win.get_rows();
                 int total_cols = win.get_cols();
 
@@ -458,16 +466,16 @@ namespace echo
 
             int getMaxBars(Window &win, int bar_width) { return (win.get_w()) / bar_width; }
 
-            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<COLOR> &colors = {}, char ch = '#')
+            void draw_bars(Window &win, const std::vector<int> &heights, int bar_width, const std::vector<COLOR> &colors = {}, const std::string &ch = "#")
             {
                 if (heights.empty())
                     throw std::invalid_argument("\nERROR: Heights vector is empty in draw_bars");
                 if (bar_width <= 0)
-                    throw std::invalid_argument("\nnERROR: Bar width must be positive in draw_bars");
-                if (heights.size() * bar_width > win.get_w())
-                    throw std::out_of_range("\nnERROR: Bars exceed window width in draw_bars");
+                    throw std::invalid_argument("\nERROR: Bar width must be positive in draw_bars");
+                if (heights.size() * bar_width > static_cast<size_t>(win.get_w()))
+                    throw std::out_of_range("\nERROR: Bars exceed window width in draw_bars");
                 if (!colors.empty() && colors.size() != heights.size())
-                    throw std::invalid_argument("\nnERROR: Colors vector size must match heights vector size in draw_bars");
+                    throw std::invalid_argument("\nERROR: Colors vector size must match heights vector size in draw_bars");
 
                 win.clean_buffer();
 
@@ -479,14 +487,17 @@ namespace echo
                     int bar_height = heights[i];
                     const COLOR& color = colors.empty() ? COLOR(COLOR::BLUE) : colors[i];
 
+                    std::string bar_str = "";
+                    for(int bw = 0; bw < bar_width; ++bw) bar_str += ch;
+
                     for (int r = total_rows - bar_height; r < total_rows; r++)
-                        win.print(r, i * bar_width, std::string(bar_width, ch), color);
+                        win.print(r, i * bar_width, bar_str, color);
                 }
             }
-            
-            void draw_frame(Window &win, const std::vector<char> &chars, const std::vector<COLOR>& colors = {}) {
+
+            void draw_frame(Window &win, const std::vector<std::string> &chars, const std::vector<COLOR>& colors = {}) {
                 if (chars.size() != colors.size()) throw std::invalid_argument("Size of characters do not match size of colors vector!\n");
-                if (chars.size() != win.get_w() * win.get_h()) throw std::out_of_range("Total characters do not match window size!\n");
+                if (chars.size() != static_cast<size_t>(win.get_w() * win.get_h())) throw std::out_of_range("Total characters do not match window size!\n");
 
                 win.clean_buffer();
 
@@ -496,7 +507,7 @@ namespace echo
                     int x = i % max_width;
                     int y = i / max_width;
 
-                    win.print(y, x, std::string(1, chars[i]), colors[i]);
+                    win.print(y, x, chars[i], colors[i]);
                 }
             }
 
@@ -505,26 +516,29 @@ namespace echo
                 int col, int width, 
                 std::function<int()> progress_func, 
                 const COLOR& color = COLOR(COLOR::GREEN),
-                char fill_ch = '#', char empty_ch = '='
+                const std::string &fill_ch = "#", const std::string &empty_ch = "="
             ) {
 
                 if (col < 0 || col + width > win.get_w() || row < 0 || row >= win.get_h())
                     throw std::out_of_range("\nERROR: Progress bar dimensions exceed window bounds in draw_progress_bar");
 
                 int progress = progress_func();
-                assert(progress >= 0 && progress <= 100 && "Termviz: Progress out of bounds!");
+                assert(progress >= 0 && progress <= 100 && "Echo: Progress out of bounds!");
 
                 win.print(row, col, "[", color);
                 win.print(row, col + width - 1, "]", color);
 
-                width -= 2; // Adjust for brackets
-                col+=1; // Move inside the brackets
+                width -= 2; 
+                col += 1; 
                 
                 int filled_length = static_cast<int>(width * (progress / 100.0f));
                 int empty_length = width - filled_length;
 
-                std::string filled_part(filled_length, fill_ch);
-                std::string empty_part(empty_length, empty_ch);
+                std::string filled_part = "";
+                for(int i = 0; i < filled_length; ++i) filled_part += fill_ch;
+
+                std::string empty_part = "";
+                for(int i = 0; i < empty_length; ++i) empty_part += empty_ch;
 
                 win.print(row, col, filled_part + empty_part, color);
             }
@@ -533,34 +547,29 @@ namespace echo
 
             using namespace echo::ThreeD;
 
-            void draw_point3D(Window &win, const Point3D &point, const COLOR& color = COLOR(COLOR::RESET), char ch = '#') {
-                Point2D p2d = static_cast<Point2D>(point); // simple orthographic projection
+            void draw_point3D(Window &win, const Point3D &point, const COLOR& color = COLOR(COLOR::RESET), const std::string &ch = "#") {
+                Point2D p2d = static_cast<Point2D>(point); 
                 if (p2d.x < 0 || p2d.x >= win.get_w() || p2d.y < 0 || p2d.y >= win.get_h())
                     throw std::out_of_range("\nERROR: 3D Point projects outside window bounds in draw_point3D");
 
-                win.print(p2d.y, p2d.x, std::string(1, ch), color);
+                win.print(p2d.y, p2d.x, ch, color);
             }
 
-            void draw_line3D(Window &win, const Point3D &p1, const Point3D &p2, const COLOR& color = COLOR(COLOR::RESET), char ch = '#') {
+            void draw_line3D(Window &win, const Point3D &p1, const Point3D &p2, const COLOR& color = COLOR(COLOR::RESET), const std::string &ch = "#") {
                 Point2D s = static_cast<Point2D>(p1);
                 Point2D e = static_cast<Point2D>(p2);
 
-                // Bresenham's line algorithm
                 int dx = abs(e.x - s.x), sx = s.x < e.x ? 1 : -1;
                 int dy = -abs(e.y - s.y), sy = s.y < e.y ? 1 : -1;
                 int err = dx + dy, e2;
 
-                int steps = (std::max)(dx, abs(dy)); // we check how many steps it takes to draw the line
-                int current_step = 0; // this will help in interpolation
+                int steps = (std::max)(dx, abs(dy)); 
+                int current_step = 0; 
 
                 while (true) {
-                    // Calculate "Darkness" based on Z
-                    // Linear interpolation of Z: current_z = z1 + (t * (z2 - z1))
                     float t = (steps == 0) ? 1.0f : (float)current_step / steps;
                     float current_z = p1.z + t * (p2.z - p1.z);
 
-                    // Map Z to a brightness multiplier (e.g., further = darker)
-                    // Adjust these values based on your scene depth
                     float brightness = 1.0f / (1.0f + (current_z * 0.1f)); 
                     COLOR depth_color(
                         static_cast<uint8_t>(color.r * brightness),
@@ -569,7 +578,7 @@ namespace echo
                     );
 
                     if (s.x >= 0 && s.x < win.get_w() && s.y >= 0 && s.y < win.get_h()) {
-                        win.print(s.y, s.x, std::string(1, ch), depth_color);
+                        win.print(s.y, s.x, ch, depth_color);
                     }
 
                     if (s.x == e.x && s.y == e.y) break;
